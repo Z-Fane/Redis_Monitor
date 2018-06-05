@@ -1,11 +1,17 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
+from redis import RedisError
 
-db=SQLAlchemy()
+from app.common.rest import RestException
+
+db = SQLAlchemy()
+
 
 class Server(db.Model):
-    __tablename__='redis_server'
+    __tablename__ = 'redis_server'
+
+    id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), unique=True)
     description = db.Column(db.String(512))
     host = db.Column(db.String(15))
@@ -17,6 +23,19 @@ class Server(db.Model):
     def save(self):
         db.session.add(self)
         db.session.commit()
+
     def delete(self):
         db.session.delete(self)
         db.session.commit()
+
+    def ping(self):
+        try:
+            return self.redis.ping()
+        except RedisError:
+            raise RestException(400, 'redis server %s can not connected' % self.host)
+
+    def get_metrics(self):
+        try:
+            return self.redis.info()
+        except RedisError:
+            raise RestException(400, 'redis server %s can not connected' % self.host)

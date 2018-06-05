@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
-from redis import RedisError
+from redis import RedisError, StrictRedis
 
 from app.common.rest import RestException
 
@@ -39,3 +39,6 @@ class Server(db.Model):
             return self.redis.info()
         except RedisError:
             raise RestException(400, 'redis server %s can not connected' % self.host)
+    @property
+    def redis(self):
+        return StrictRedis(host=self.host, port=self.port, password=self.password)

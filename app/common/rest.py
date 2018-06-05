@@ -14,7 +14,7 @@ class RestException(Exception):
 class RestView(MethodView):
     content_type = 'application/json; charset=utf-8'
     method_decorators = []
-
+    #处理异常
     def handler_error(self, exception):
         data = {
             'ok': False,

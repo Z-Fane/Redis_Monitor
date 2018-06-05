@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from flask_sqlalchemy import SQLAlchemy
+from marshmallow import post_load, ValidationError, validates_schema, fields, validate, Schema
 from redis import RedisError, StrictRedis
 
 from app.common.rest import RestException
@@ -42,3 +43,55 @@ class Server(db.Model):
     @property
     def redis(self):
         return StrictRedis(host=self.host, port=self.port, password=self.password)
+
+class ServerSchema(Schema):
+    """Redis服务器记录序列化类
+    """
+    id = fields.Integer(dump_only=True)
+    name = fields.String(required=True, validate=validate.Length(2, 64))
+    description = fields.String(validate=validate.Length(0, 512))
+    # host 必须是 IP v4 地址，通过正则验证
+    host = fields.String(required=True,
+                         validate=validate.Regexp(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'))
+    port = fields.Integer(validate=validate.Range(1024, 65536))
+    password = fields.String()
+    updated_at = fields.DateTime(dump_only=True)
+    created_at = fields.DateTime(dump_only=True)
+
+    @validates_schema
+    def validate_schema(self, data):
+        """验证是否已经存在同名 Redis 服务器
+        """
+        if 'port' not in data:
+            data['port'] = 6379
+
+        instance = self.context.get('instance', None)
+
+        server = Server.query.filter_by(name=data['name']).first()
+
+        if server is None:
+            return
+
+        # 更新服务器时
+        if instance is not None and server != instance:
+            raise ValidationError('Redis server already exist', 'name')
+
+        # 创建服务器时
+        if instance is None and server:
+            raise ValidationError('Redis server already exist', 'name')
+
+    @post_load
+    def create_or_update(self, data):
+        """数据加载成功后自动创建 Server 对象
+        """
+        instance = self.context.get('instance', None)
+
+        # 创建 Redis 服务器
+        if instance is None:
+            return Server(**data)
+
+        # 更新服务器
+        for key in data:
+            setattr(instance, key, data[key])
+        return instance
+

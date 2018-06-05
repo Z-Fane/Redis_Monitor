@@ -31,7 +31,7 @@ class RestView(MethodView):
         if method is None and request.method == 'HEAD':
             method = getattr(self, 'get', None)
         assert method is not None, 'Unimplemented method %r' % request.method
-        # HTTP 请求方法定义了不同的装饰器
+        # HTTP请求方法定义了不同的装饰器
         if isinstance(self.method_decorators, Mapping):
             decorators = self.method_decorators.get(request.method.lower(), [])
         else:
@@ -39,7 +39,6 @@ class RestView(MethodView):
 
         for decorator in decorators:
             method = decorator(method)
-
         try:
             resp = method(*args, **kwargs)
         except RestException as e:

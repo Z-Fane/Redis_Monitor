@@ -21,3 +21,4 @@ class ObjectMustBeExist():
             g.instance=obj
             return func(*args,**kwargs)
         return wrapper
+

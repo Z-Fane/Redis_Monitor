@@ -29,6 +29,18 @@ class Server(db.Model):
         db.session.delete(self)
         db.session.commit()
 
+    @property
+    def status(self):
+        """服务器当前状态
+        """
+        status = 'error'
+        try:
+            if self.ping():
+                status = 'ok'
+        except RedisError:
+            raise RestException(400, 'redis server %s can not connected' % self.host)
+        return status
+
     def ping(self):
         try:
             return self.redis.ping()
@@ -40,13 +52,13 @@ class Server(db.Model):
             return self.redis.info()
         except RedisError:
             raise RestException(400, 'redis server %s can not connected' % self.host)
+
     @property
     def redis(self):
         return StrictRedis(host=self.host, port=self.port, password=self.password)
 
+
 class ServerSchema(Schema):
-    """Redis服务器记录序列化类
-    """
     id = fields.Integer(dump_only=True)
     name = fields.String(required=True, validate=validate.Length(2, 64))
     description = fields.String(validate=validate.Length(0, 512))
@@ -94,4 +106,3 @@ class ServerSchema(Schema):
         for key in data:
             setattr(instance, key, data[key])
         return instance
-

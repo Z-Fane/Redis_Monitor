@@ -3,6 +3,7 @@ import os
 class DevConfig:
     """开发环境配置
     """
+    SECRET_KEY ='OQR!YuiIZ0K5!NmqI1zy@S7x&ac5zJ9DAQhb'
 
     DEBUG = True
     SQLALCHEMY_TRACK_MODIFICATIONS = False

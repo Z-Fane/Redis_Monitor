@@ -9,9 +9,11 @@ from redis import RedisError, StrictRedis
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 
-from app.common.exception import AuthenticationError
-from app.common.rest import RestException
+from app.common.errors import RedisConnectError, AuthenticateError
+from app.common.rest import RestError
+
 db = SQLAlchemy()
+
 
 class BaseModel(db.Model):
     __abstract__ = True
@@ -37,6 +39,7 @@ class Server(BaseModel):
     host = db.Column(db.String(15))
     port = db.Column(db.Integer, default=6379)
     password = db.Column(db.String())
+
     @property
     def status(self):
         status = 'error'
@@ -44,19 +47,20 @@ class Server(BaseModel):
             if self.ping():
                 status = 'ok'
         except RedisError:
-            raise RestException(400, 'redis server %s can not connected' % self.host)
+            raise RestError(400, 'redis server %s can not connected' % self.host)
         return status
+
     def ping(self):
         try:
             return self.redis.ping()
-        except RedisError:
-            raise RestException(400, 'redis server %s can not connected' % self.host)
+        except RedisConnectError:
+            raise RedisConnectError(400, 'redis server %s can not connected' % self.host)
 
     def get_metrics(self):
         try:
             return self.redis.info()
-        except RedisError:
-            raise RestException(400, 'redis server %s can not connected' % self.host)
+        except RedisConnectError:
+            raise RedisConnectError(400, 'redis server %s can not connected' % self.host)
 
     @property
     def redis(self):
@@ -112,6 +116,7 @@ class ServerSchema(Schema):
             setattr(instance, key, data[key])
         return instance
 
+
 class User(BaseModel):
     __tablename__ = 'user'
 
@@ -133,27 +138,28 @@ class User(BaseModel):
         self._password = generate_password_hash(passwd)
 
     def verify_password(self, password):
-        return check_password_hash(password)
+        return check_password_hash(self.password,password)
 
     @classmethod
     def authenticate(cls, identifier, password):
         user = cls.query.filter(db.or_(cls.name == identifier,
                                        cls.email == identifier)).first()
         if user is None or not user.verify_password(password):
-            raise AuthenticationError(403, 'authentication failed')
+            raise AuthenticateError(403, 'authentication failed')
         return user
+
     def generate_token(self):
-        #过期时间
-        exp=datetime.utcnow()+timedelta(days=1)
+        # 过期时间
+        exp = datetime.utcnow() + timedelta(days=1)
         # 过期后10分钟内，还可以通过老Token获取新Token
-        refresh_exp=timegm((exp + timedelta(seconds=60 * 10)).utctimetuple())
-        payload={
-            'uid':self.id,
-            'is_admin':self.is_admin,
-            'exp':exp,
-            'refresh_exp':refresh_exp
+        refresh_exp = timegm((exp + timedelta(seconds=60 * 10)).utctimetuple())
+        payload = {
+            'uid': self.id,
+            'is_admin': self.is_admin,
+            'exp': exp,
+            'refresh_exp': refresh_exp
         }
-        return jwt.encode(payload,current_app.secret_key,algorithm='HS512').decode('utf-8')
+        return jwt.encode(payload, current_app.secret_key, algorithm='HS512').decode('utf-8')
 
     @classmethod
     def verify_token(cls, token, verify_exp=True):
@@ -162,20 +168,19 @@ class User(BaseModel):
         else:
             options = {'verify_exp': False}
         try:
-            payload=jwt.decode(token,current_app.secret_key,algorithms=['HS512'],options=options,require_exp=True)
+            payload = jwt.decode(token, current_app.secret_key,verify=True, algorithms=['HS512'], options=options, require_exp=True)
         except jwt.InvalidTokenError as e:
-            raise InvalidTokenError(403,str(e))
+            raise InvalidTokenError(403, str(e))
         if any(('is_admin' not in payload,
                 'refresh_exp' not in payload, 'uid' not in payload)):
             raise InvalidTokenError(403, 'invalid token')
         # 如果刷新时间过期，则认为 token 无效
-        if payload['refresh_exp'] < timegm(datetime.now.utctimetuple()):
-                raise InvalidTokenError(403, 'invalid token')
+        if payload['refresh_exp'] < timegm(datetime.utcnow().utctimetuple()):
+            raise InvalidTokenError(403, 'invalid token')
         u = User.query.get(payload.get('uid'))
         if u is None:
             raise InvalidTokenError(403, 'user not exist')
         return u
-
 
     @classmethod
     def create_administrator(cls):
@@ -193,3 +198,54 @@ class User(BaseModel):
     @classmethod
     def wx_id_user(cls, wx_id):
         return cls.query.filter_by(wx_id=wx_id).first()
+
+
+class UserSchema(Schema):
+    id = fields.Integer(dump_only=True)
+    name = fields.String(required=True, validate=validate.Length(2, 64))
+    email = fields.Email(required=True, validate=validate.Length(2, 64))
+    password = fields.String(load_only=True, validate=validate.Length(2, 128))
+    is_admin = fields.Boolean()
+    wx_id = fields.String(dump_only=True)
+    login_at = fields.DateTime(dump_only=True)
+    updated_at = fields.DateTime(dump_only=True)
+    created_at = fields.DateTime(dump_only=True)
+
+    @validates_schema
+    def validate_schema(self, data):
+        instance = self.context.get('instance', None)
+
+        user = User.query.filter(db.or_(User.name == data.get('name'),
+                                        User.email == data.get('email'))).first()
+
+        if user is None:
+            return
+
+        # 创建服务器时
+        if instance is None:
+            field = 'name' if user.name == data['name'] else 'email'
+            raise ValidationError('user already exist', field)
+
+        # 更新用户时
+        if user != instance:
+            # 判断是存在同名用户或者是同邮箱的用户
+            field = 'name' if user.name == instance.name else 'email'
+            raise ValidationError('user already exist', field)
+
+    @post_load
+    def create_or_update(self, data):
+        """数据加载成功后自动创建 User
+        """
+        instance = self.context.get('instance', None)
+
+        # 创建用户
+        if instance is None:
+            user = User()
+        # 更新用户
+        else:
+            user = instance
+
+        # FIXME 更新用户时可能覆盖用户密码
+        for key in data:
+            setattr(user, key, data[key])
+        return user

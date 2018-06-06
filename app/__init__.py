@@ -3,7 +3,7 @@ import os
 from flask import Flask
 
 from app.config import ProductConfig, DevConfig
-from app.models import db
+from app.models import db, User
 from app.views.urls import api
 
 
@@ -31,4 +31,7 @@ def create_app():
     if app.debug:
         with app.app_context():
             db.create_all()
+            name, password = User.create_administrator()
     return app
+
+

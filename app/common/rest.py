@@ -6,7 +6,7 @@ from flask.views import MethodView
 
 
 # 自定义View:json 序列化，异常处理，装饰器支持
-from app.common.exception import RestException
+from app.common.errors import RestError
 
 
 class RestView(MethodView):
@@ -39,7 +39,7 @@ class RestView(MethodView):
             method = decorator(method)
         try:
             resp = method(*args, **kwargs)
-        except RestException as e:
+        except RestError as e:
             resp = self.handler_error(e)
         # 如果返回结果已经是 HTTP 响应则直接返回
         if isinstance(resp, Response):

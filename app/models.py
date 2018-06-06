@@ -1,23 +1,21 @@
-from datetime import datetime
+from calendar import timegm
 
+import jwt
+from flask import current_app
 from flask_sqlalchemy import SQLAlchemy
+from jwt import InvalidTokenError
 from marshmallow import post_load, ValidationError, validates_schema, fields, validate, Schema
 from redis import RedisError, StrictRedis
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timedelta
 
+from app.common.exception import AuthenticationError
 from app.common.rest import RestException
-
 db = SQLAlchemy()
 
+class BaseModel(db.Model):
+    __abstract__ = True
 
-class Server(db.Model):
-    __tablename__ = 'redis_server'
-
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(64), unique=True)
-    description = db.Column(db.String(512))
-    host = db.Column(db.String(15))
-    port = db.Column(db.Integer, default=6379)
-    password = db.Column(db.String())
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -29,10 +27,18 @@ class Server(db.Model):
         db.session.delete(self)
         db.session.commit()
 
+
+class Server(BaseModel):
+    __tablename__ = 'redis_server'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), unique=True)
+    description = db.Column(db.String(512))
+    host = db.Column(db.String(15))
+    port = db.Column(db.Integer, default=6379)
+    password = db.Column(db.String())
     @property
     def status(self):
-        """服务器当前状态
-        """
         status = 'error'
         try:
             if self.ping():
@@ -40,7 +46,6 @@ class Server(db.Model):
         except RedisError:
             raise RestException(400, 'redis server %s can not connected' % self.host)
         return status
-
     def ping(self):
         try:
             return self.redis.ping()
@@ -106,3 +111,85 @@ class ServerSchema(Schema):
         for key in data:
             setattr(instance, key, data[key])
         return instance
+
+class User(BaseModel):
+    __tablename__ = 'user'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # 用户微信 ID，全局唯一
+    wx_id = db.Column(db.String(32), unique=True)
+    name = db.Column(db.String(64), unique=True)
+    email = db.Column(db.String(64), unique=True)
+    _password = db.Column(db.String(128))
+    is_admin = db.Column(db.Boolean, default=False)
+    login_at = db.Column(db.DateTime)
+
+    @property
+    def password(self):
+        return self._password
+
+    @password.setter
+    def password(self, passwd):
+        self._password = generate_password_hash(passwd)
+
+    def verify_password(self, password):
+        return check_password_hash(password)
+
+    @classmethod
+    def authenticate(cls, identifier, password):
+        user = cls.query.filter(db.or_(cls.name == identifier,
+                                       cls.email == identifier)).first()
+        if user is None or not user.verify_password(password):
+            raise AuthenticationError(403, 'authentication failed')
+        return user
+    def generate_token(self):
+        #过期时间
+        exp=datetime.utcnow()+timedelta(days=1)
+        # 过期后10分钟内，还可以通过老Token获取新Token
+        refresh_exp=timegm((exp + timedelta(seconds=60 * 10)).utctimetuple())
+        payload={
+            'uid':self.id,
+            'is_admin':self.is_admin,
+            'exp':exp,
+            'refresh_exp':refresh_exp
+        }
+        return jwt.encode(payload,current_app.secret_key,algorithm='HS512').decode('utf-8')
+
+    @classmethod
+    def verify_token(cls, token, verify_exp=True):
+        if verify_exp:
+            options = None
+        else:
+            options = {'verify_exp': False}
+        try:
+            payload=jwt.decode(token,current_app.secret_key,algorithms=['HS512'],options=options,require_exp=True)
+        except jwt.InvalidTokenError as e:
+            raise InvalidTokenError(403,str(e))
+        if any(('is_admin' not in payload,
+                'refresh_exp' not in payload, 'uid' not in payload)):
+            raise InvalidTokenError(403, 'invalid token')
+        # 如果刷新时间过期，则认为 token 无效
+        if payload['refresh_exp'] < timegm(datetime.now.utctimetuple()):
+                raise InvalidTokenError(403, 'invalid token')
+        u = User.query.get(payload.get('uid'))
+        if u is None:
+            raise InvalidTokenError(403, 'user not exist')
+        return u
+
+
+    @classmethod
+    def create_administrator(cls):
+        name = 'admin'
+        # 管理员账户名称默认为 admin
+        admin = cls.query.filter_by(name=name).first()
+        if admin:
+            return admin.name, ''
+        password = '123456'
+        admin = User(name=name, email='amin@zfane.cn', is_admin=True)
+        admin.password = password
+        admin.save()
+        return name, password
+
+    @classmethod
+    def wx_id_user(cls, wx_id):
+        return cls.query.filter_by(wx_id=wx_id).first()

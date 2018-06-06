@@ -5,12 +5,10 @@ from flask.json import dumps
 from flask.views import MethodView
 
 
-class RestException(Exception):
-    def __init__(self, code, message):
-        self.code = code
-        self.message = message
-        super(RestException, self).__init__()
 # 自定义View:json 序列化，异常处理，装饰器支持
+from app.common.exception import RestException
+
+
 class RestView(MethodView):
     content_type = 'application/json; charset=utf-8'
     method_decorators = []

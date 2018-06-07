@@ -24,13 +24,13 @@ RM支持 Redis 服务器的增删改操作，并支持获取具体某一个服�
 |微信绑定|/wx/bind/<wx_id>|GET/POST|200|404/400|
 |登录|/login|POST|200|404/400|
 |用户管理|/users/|GET|200|404/400|
-|用户详情|/users/<int:object_id>|POST|200|404/400|
+|用户详情|/users/<object_id>|POST|200|404/400|
 
 # 运行截图
-![]("/screenshots/20180607140952.png")
-![]("/screenshots/20180607141054.png")
-![]("/screenshots/20180607141128.png")
-![]("/screenshots/20180607141151.png")
+![jietu](screenshots/20180607140952.png)
+![jietu](screenshots/20180607141054.png)
+![jietu](screenshots/20180607141128.png)
+![jietu](screenshots/20180607141151.png)
 
 
 

@@ -2,6 +2,7 @@
 from flask import Blueprint
 
 from app.views.views import IndexView, ServerList, ServerDetail, ServerMetrics, AuthView, UserDetail, UserList
+from app.views.wx import WxView
 
 api = Blueprint('api', __name__)
 
@@ -26,5 +27,5 @@ api.add_url_rule('/servers/<int:object_id>/metrics',
 
 
 # # 微信接口
-# api.add_url_rule('/wx/', view_func=WxView.as_view('wx_view'))
+api.add_url_rule('/wx/', view_func=WxView.as_view('wx_view'))
 # api.add_url_rule('/wx/bind/<wx_id>', view_func=WxBind.as_view('wx_bind'))

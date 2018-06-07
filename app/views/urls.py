@@ -2,7 +2,7 @@
 from flask import Blueprint
 
 from app.views.views import IndexView, ServerList, ServerDetail, ServerMetrics, AuthView, UserDetail, UserList
-from app.views.wx import WxView
+from app.wx.wx import WxView
 
 api = Blueprint('api', __name__)
 

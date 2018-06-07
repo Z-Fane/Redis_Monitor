@@ -2,8 +2,9 @@ import hashlib
 
 from flask import request, abort, current_app
 from flask.views import MethodView
+from wechatpy import parse_message
 
-from app.common.rest import RestView
+from app.wx import wx_dispatcher
 
 
 class WxView(MethodView):
@@ -13,7 +14,6 @@ class WxView(MethodView):
             abort(403)
         nonce=request.args.get('nonce')
         timestamp=request.args.get('timestamp')
-        a=current_app.config['WX_TOKEN']
         msg=[current_app.config['WX_TOKEN'],timestamp,nonce]
         msg.sort()
         sha = hashlib.sha1()
@@ -25,5 +25,6 @@ class WxView(MethodView):
         return request.args.get('echostr')
     def post(self):
         self.check_signature()
-        current_app.logger.debug(request.data)
-        return 'hello'
+        msg=parse_message(request.data)
+        reply=wx_dispatcher.dispatch(msg)
+        return reply.render()

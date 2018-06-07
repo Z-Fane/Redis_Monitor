@@ -5,6 +5,7 @@ from flask import Flask
 from app.config import ProductConfig, DevConfig
 from app.models import db, User
 from app.views.urls import api
+from app.wx import wx_dispatcher
 
 
 def create_app():
@@ -27,6 +28,8 @@ def create_app():
     app.register_blueprint(api)
     # 初始化数据库
     db.init_app(app)
+    wx_dispatcher.init_app(app)
+
     # 如果是开发环境则创建所有数据库表
     if app.debug:
         with app.app_context():

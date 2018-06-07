@@ -12,6 +12,8 @@ class DevConfig:
     SQLALCHEMY_DATABASE_URI = 'sqlite:///%s' % path
     TEMPLATES_AUTO_RELOAD = True
     WX_TOKEN='hellozfane'
+    WX_APP_ID='wx512fda512d5458b3'
+    WX_SECRET='c94760e8e991868306378b5130a43583'
 
 
 class ProductConfig(DevConfig):
